@@ -1,0 +1,115 @@
+--- a/examples/flash_gated_delta_rule.py
++++ b/examples/flash_gated_delta_rule.py
+@@ -1,3 +1,4 @@
++import contextlib
+ import os
+ import sys
+ import warnings
+@@ -273,6 +274,81 @@
+     return True
+
+
++@contextlib.contextmanager
++def _serial_triton_launch():
++    """Temporarily disable Triton-NPU's all-blocks-parallel launch mapping.
++
++    Its launcher clamps the grid to the physical block count, which makes the
++    solve_tril merge kernels skip work and return a near-identity inverse.
++    """
++    prev = os.environ.get("TRITON_ALL_BLOCKS_PARALLEL")
++    os.environ["TRITON_ALL_BLOCKS_PARALLEL"] = "0"
++    try:
++        yield
++    finally:
++        if prev is None:
++            os.environ.pop("TRITON_ALL_BLOCKS_PARALLEL", None)
++        else:
++            os.environ["TRITON_ALL_BLOCKS_PARALLEL"] = prev
++
++
++def _solve_tril_serial(A, *, cu_seqlens, chunk_indices_out, output_dtype):
++    with _serial_triton_launch():
++        return solve_tril(
++            A=A,
++            cu_seqlens=cu_seqlens,
++            chunk_indices_out=chunk_indices_out,
++            output_dtype=output_dtype,
++        )
++
++
++_BLOCKWISE_MASKS: Dict[tuple, list] = {}
++
++
++def _blockwise_masks(device: torch.device, block_size: int):
++    key = (device.type, device.index, block_size)
++    masks = _BLOCKWISE_MASKS.get(key)
++    if masks is None:
++        idx = torch.arange(block_size, device=device)
++        masks = []
++        span = 1
++        while span < block_size:
++            block = idx // span
++            mask = (
++                (block[:, None] % 2 == 1)
++                & (block[None, :] % 2 == 0)
++                & (block[:, None] // 2 == block[None, :] // 2)
++            )
++            masks.append(mask.to(torch.float32))
++            span *= 2
++        _BLOCKWISE_MASKS[key] = masks
++    return masks
++
++
++def _solve_wy_blockwise(A: torch.Tensor, *, output_dtype: torch.dtype) -> torch.Tensor:
++    """(I + A)^-1 for strictly lower-triangular chunk blocks, in fp32.
++
++    Equivalent to the MCH recursion, but expressed as log2(BT) batched
++    matmuls, which stays accurate on the ill-conditioned chunks where the
++    AscendC npu_solve_tri half-precision path diverges.
++    """
++    shape = A.shape
++    batch, seq, heads, block_size = shape
++    nt = seq // block_size
++    blocks = (
++        A.reshape(batch, nt, block_size, heads, block_size)
++        .permute(0, 1, 3, 2, 4)
++        .to(torch.float32)
++        .contiguous()
++    )
++    eye = torch.eye(block_size, dtype=blocks.dtype, device=blocks.device)
++    inv = eye.expand_as(blocks).contiguous()
++    for mask in _blockwise_masks(blocks.device, block_size):
++        coupling = blocks * mask
++        inv = inv - (inv @ coupling) @ inv
++    return inv.permute(0, 1, 3, 2, 4).reshape(shape).to(output_dtype).contiguous()
++
++
+ def solve_tri_auto(
+     A: torch.Tensor,
+     *,
+@@ -283,6 +359,25 @@
+     output_dtype: torch.dtype,
+ ) -> torch.Tensor:
+     global _SOLVE_TRI_ASCENDC_AVAILABLE, _SOLVE_TRI_ASCENDC_UNAVAILABLE_REASON
++
++    # AscendC npu_solve_tri is catastrophically inaccurate in half precision on
++    # ill-conditioned chunks (observed max error > 300 vs an O(1) inverse),
++    # which corrupts prepare_wy_repr and makes fwd_h overflow to inf/NaN.
++    # The Triton fallback stays within output quantization error.
++    if output_dtype in (torch.bfloat16, torch.float16):
++        if (
++            cu_seqlens is None
++            and A.ndim == 4
++            and A.shape[-1] in (16, 32, 64, 128)
++            and A.shape[1] % A.shape[-1] == 0
++        ):
++            return _solve_wy_blockwise(A, output_dtype=output_dtype)
++        return _solve_tril_serial(
++            A,
++            cu_seqlens=cu_seqlens,
++            chunk_indices_out=chunk_indices_out,
++            output_dtype=output_dtype,
++        )
+
+     if _probe_solve_tri_ascendc(A.device, output_dtype):
+         try:

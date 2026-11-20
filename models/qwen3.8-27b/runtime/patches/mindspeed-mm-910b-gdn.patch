@@ -1,0 +1,7 @@
+--- a/mindspeed_mm/mcore/models/qwen3_5/gated_delta_net.py
++++ b/mindspeed_mm/mcore/models/qwen3_5/gated_delta_net.py
+@@ -35,3 +35,3 @@
+ from mindspeed_mm.fsdp.ops.gdn.chunk_gated_delta_rule import chunk_gated_delta_rule
+-from mindspeed_mm.fsdp.ops.gdn.flash_gated_delta_rule import flash_gated_delta_rule
++from qwen38_fla_adapter import flash_gated_delta_rule
+ from mindspeed_mm.fsdp.models.qwen3_5.causal_conv1d import causal_conv1d

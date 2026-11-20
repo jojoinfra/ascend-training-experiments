@@ -1,0 +1,5 @@
+/.training.lock
+/results/
+/*/results/
+/logs/
+/wheels/

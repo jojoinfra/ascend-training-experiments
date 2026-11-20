@@ -1,0 +1,16 @@
+diff --git a/mindspeed/core/megatron_basic/megatron_basic.py b/mindspeed/core/megatron_basic/megatron_basic.py
+index 5c50d98..9b1ac5e 100644
+--- a/mindspeed/core/megatron_basic/megatron_basic.py
++++ b/mindspeed/core/megatron_basic/megatron_basic.py
+@@ -50,6 +50,11 @@ def _set_cuda_rng_state(new_state: torch.Tensor, device: int = -1, graph_safe: b
+ 
+ 
+ def _compile_dependencies():
++    # External iterators do not use the C++ indexed-dataset helpers.
++    # Keep pinned framework source mounts read-only for synthetic benchmarks.
++    from megatron.training import get_args
++    if get_args().dataloader_type == "external":
++        return
+     if torch.distributed.get_rank() == 0:
+         start_time = time.time()
+         print('> compiling dataset index builder ...')

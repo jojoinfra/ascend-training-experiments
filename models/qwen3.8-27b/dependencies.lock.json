@@ -1,0 +1,24 @@
+{
+  "Megatron-LM": {
+    "url": "https://github.com/NVIDIA/Megatron-LM.git",
+    "commit": "a845aa7e12b3a117e24c2352b9e3e60bad2e3a17"
+  },
+  "MindSpeed": {
+    "url": "https://github.com/Ascend/MindSpeed.git",
+    "commit": "eb10b92fa0660c8d5426012795cfe2335814496f",
+    "patch": "runtime/patches/mindspeed-external-data.patch",
+    "patched_tree": "1f4ba7fe053cd69f3adcdcaccfdb0d2b9872235b"
+  },
+  "MindSpeed-MM": {
+    "url": "https://github.com/Ascend/MindSpeed-MM.git",
+    "commit": "85c09ac497d62839bf514fe1a8d7fc0c316e4cd5",
+    "patch": "runtime/patches/mindspeed-mm-910b-gdn.patch",
+    "patched_tree": "e9c38a1a389d15f2c9e76192efc7e28b3aca0684"
+  },
+  "flash-linear-attention-npu": {
+    "url": "https://github.com/flashserve/flash-linear-attention-npu.git",
+    "commit": "c2e3d83f64d0d6ceff09327f8818d9cb10edb0be",
+    "patch": "runtime/patches/fla-910b-triangular-solve.patch",
+    "patched_tree": "4625fef6d870f7436cc2894c85fdf4d28ce745a8"
+  }
+}
